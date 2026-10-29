@@ -321,7 +321,7 @@ const COLUMNS = [
   { key:'notes',               label:'Бележки',                    level:'meta', type:'text',  w:50 },
 ];
 
-const SYSTEM_PROMPT = `You extract data from Bulgarian purchase invoices (фактури) and fiscal receipts (фискални бонове / касови бележки) for bookkeeping. Read the document carefully and call record_invoices exactly once.
+const SYSTEM_PROMPT = `You extract data from Bulgarian purchase invoices (фактури) and fiscal receipts (фискални бонове / касови бележки) for bookkeeping. Read the document carefully, then always record the result by calling the record_invoices tool exactly once. Do not reply with plain text.
 
 Rules:
 - One entry in "invoices" per invoice or receipt in the file (usually one). A multi-page PDF of one invoice is one entry.
@@ -790,12 +790,14 @@ function apiError(status, msg) {
 async function callClaude(block, fileName) {
   const body = {
     model: getModel(),
-    max_tokens: 8000,
+    max_tokens: 16000,
     system: SYSTEM_PROMPT,
     tools: [TOOL],
-    tool_choice: { type:'tool', name:'record_invoices' },
-    messages: [{ role:'user', content: [block, { type:'text', text:`Файл: ${fileName}. Извлечи данните от всички фактури или касови бележки в него.` }] }],
+    messages: [{ role:'user', content: [block, { type:'text', text:`Файл: ${fileName}. Извлечи данните от всички фактури или касови бележки в него и ги запиши с инструмента record_invoices.` }] }],
   };
+  // Newer models don't accept a forced tool choice, so if the reply comes back
+  // without the tool call, ask once more in the same conversation.
+  let nudged = false;
   const delays = [3000, 8000, 15000];
   for (let attempt = 0; ; attempt++) {
     let res;
@@ -817,9 +819,16 @@ async function callClaude(block, fileName) {
     if (res.ok) {
       const data = await res.json();
       if (data.stop_reason === 'max_tokens') throw new Error('Отговорът е прекъснат, защото файлът е твърде дълъг. Разделете го на по-малки файлове.');
-      const tu = (data.content || []).find(b => b.type === 'tool_use');
-      if (!tu || !tu.input) throw new Error('Неочакван отговор. Опитайте отново.');
-      return tu.input;
+      const tu = (data.content || []).find(b => b.type === 'tool_use' && b.name === 'record_invoices');
+      if (tu && tu.input) return tu.input;
+      if (!nudged && Array.isArray(data.content)) {
+        nudged = true;
+        body.messages.push({ role:'assistant', content: data.content });
+        body.messages.push({ role:'user', content: 'Моля, запиши резултата сега с инструмента record_invoices.' });
+        attempt = -1;
+        continue;
+      }
+      throw new Error('Неочакван отговор. Опитайте отново.');
     }
     let msg = '';
     try { const j = await res.json(); msg = (j && j.error && j.error.message) || ''; } catch {}
