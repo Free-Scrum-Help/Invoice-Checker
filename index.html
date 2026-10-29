@@ -132,8 +132,14 @@ button, input, select { font: inherit; color: inherit; }
 .results-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .save-state { font-size: 0.82rem; color: var(--muted); }
 .save-state.error { color: var(--bad); }
-.legend { color: var(--muted); font-size: 0.88rem; margin-bottom: 10px; }
-.legend i { font-style: normal; display: inline-block; padding: 0 6px; border-radius: 4px; background: var(--bad-bg); color: var(--bad); font-weight: 600; }
+.help { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 12px; font-size: 0.92rem; }
+.help summary { cursor: pointer; padding: 12px 16px; font-weight: 600; }
+.help-body { padding: 0 16px 14px; display: flex; flex-direction: column; gap: 10px; color: var(--muted); max-width: 90ch; }
+.help-body strong { color: var(--ink); }
+.help-body ul { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.help-body ul .conf { min-width: 110px; text-align: center; margin-right: 8px; font-size: 0.85rem; }
+.help-body ol { padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.help i { font-style: normal; display: inline-block; padding: 0 6px; border-radius: 4px; background: var(--bad-bg); color: var(--bad); font-weight: 600; }
 
 .table-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: auto; max-height: 72vh; }
 table { border-collapse: separate; border-spacing: 0; font-size: 0.88rem; min-width: 100%; }
@@ -149,10 +155,14 @@ tbody tr.inv-start td { border-top: 2px solid var(--line); }
 td[contenteditable="true"] { cursor: text; }
 td[contenteditable="true"]:hover { box-shadow: inset 0 0 0 1px var(--line); }
 td[contenteditable="true"]:focus { outline: none; box-shadow: inset 0 0 0 2px var(--stamp); background: var(--surface); }
-td.bad, tbody tr.alt td.bad { background: var(--bad-bg); color: var(--bad); font-weight: 600; }
+tbody tr.sum td { background: var(--stamp-soft); font-weight: 600; border-bottom: 2px solid var(--stamp); }
+tbody tr.sum td.notes { font-weight: 400; }
+td.sum-label { color: var(--stamp); white-space: nowrap; }
+td.bad, tbody tr.alt td.bad, tbody tr.sum td.bad { background: var(--bad-bg); color: var(--bad); font-weight: 600; }
 td.missing { color: var(--muted); font-style: italic; }
 td.desc { min-width: 280px; }
 td.notes { min-width: 240px; color: var(--muted); }
+td.check { color: var(--ink); }
 td.file { color: var(--muted); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .conf { display: inline-block; padding: 1px 8px; border-radius: 999px; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -244,7 +254,25 @@ dialog::backdrop { background: rgba(10, 18, 32, 0.5); }
         <button class="btn btn-primary" type="button" id="exportBtn" disabled>Изтегли Excel</button>
       </div>
     </div>
-    <p class="legend" id="legend" hidden><i>Червено</i> означава неясна стойност или липсващо задължително поле. „ЛИПСВА“ означава, че данните ги няма в документа. Щракнете върху клетка, за да я коригирате.</p>
+    <details class="help" id="legend" hidden open>
+      <summary>Как да проверите и коригирате данните</summary>
+      <div class="help-body">
+        <p><strong>Защо увереността не е 100%?</strong> Програмата чете снимки и сканирани документи. Размазан текст, печат върху цифрите, сгъвки или ръкописни бележки могат да доведат до грешно прочетена цифра. Увереността показва колко сигурна е програмата, а колоната „Какво да проверите“ казва точно защо.</p>
+        <ul>
+          <li><span class="conf hi">90% и нагоре</span> Вероятно всичко е вярно. Сравнете само платената сума с документа.</li>
+          <li><span class="conf mid">70–89%</span> Проверете нещата от колоната „Какво да проверите“.</li>
+          <li><span class="conf lo">под 70%</span> Сравнете целия ред с оригинала.</li>
+        </ul>
+        <p><strong>Бърза проверка за всяка фактура:</strong></p>
+        <ol>
+          <li>Започнете с <i>червените</i> клетки и редовете с ниска увереност.</li>
+          <li>Сумите за цялата фактура са на синия ред „ОБЩО“ под нейните редове. Сравнете „Платена сума с ДДС“ там с документа. Ако съвпада, сумите почти сигурно са верни.</li>
+          <li>Проверете номера и датата на фактурата цифра по цифра. Там грешките са най-трудни за забелязване.</li>
+          <li>„ЛИПСВА“ означава, че данните ги няма в документа. Това не е грешка.</li>
+        </ol>
+        <p><strong>Как да коригирате:</strong> щракнете върху клетка, напишете вярната стойност и натиснете Enter. Esc отменя промяната. Корекциите се запазват веднага и влизат в Excel файла. С ✕ в края на ред изтривате само този ред, а с ✕ на синия ред „ОБЩО“ изтривате цялата фактура.</p>
+      </div>
+    </details>
     <div class="empty" id="empty">Все още няма данни. Добавете файлове отгоре и натиснете „Извлечи данните“.</div>
     <div class="table-wrap" id="tableWrap" hidden>
       <table>
@@ -311,13 +339,14 @@ const COLUMNS = [
   { key:'quantity',            label:'Количество',                 level:'line', type:'qty',   w:11 },
   { key:'unit_price',          label:'Единична цена без ДДС',      level:'line', type:'price', w:14 },
   { key:'line_total_excl_vat', label:'Стойност без ДДС',           level:'line', type:'money', w:14 },
-  { key:'subtotal_excl_vat',   label:'Обща сума без ДДС',          level:'inv',  type:'money', w:15, firstOnly:true },
-  { key:'vat_amount',          label:'ДДС (за фактурата)',         level:'inv',  type:'money', w:14, firstOnly:true },
-  { key:'total_paid',          label:'Платена сума с ДДС',         level:'inv',  type:'money', w:15, firstOnly:true },
+  { key:'subtotal_excl_vat',   label:'Обща сума без ДДС',          level:'inv',  type:'money', w:15, totals:true },
+  { key:'vat_amount',          label:'ДДС (за фактурата)',         level:'inv',  type:'money', w:14, totals:true },
+  { key:'total_paid',          label:'Платена сума с ДДС',         level:'inv',  type:'money', w:15, totals:true },
   { key:'currency',            label:'Валута',                     level:'inv',  type:'text',  w:8 },
   { key:'payment_method',      label:'Начин на плащане',           level:'inv',  type:'text',  w:24 },
   { key:'file',                label:'Файл',                       level:'meta', type:'text',  w:30 },
   { key:'confidence',          label:'Увереност',                  level:'meta', type:'pct',   w:11 },
+  { key:'check',               label:'Какво да проверите',         level:'meta', type:'text',  w:50 },
   { key:'notes',               label:'Бележки',                    level:'meta', type:'text',  w:50 },
 ];
 
@@ -335,9 +364,12 @@ Rules:
 - Discounts: line values must reflect what was actually paid. If a discount (отстъпка) applies, spread it across the lines in proportion to their value so that the line totals add up to subtotal_excl_vat, then set unit_price = line_total_excl_vat / quantity (4 decimals). Mention the discount in notes.
 - subtotal_excl_vat = Данъчна основа for the whole document. vat_amount = total ДДС for the whole document. total_paid = the final amount actually payable or paid including VAT, after any discounts (Сума за плащане / Обща сума / Всичко).
 - currency: ISO code, EUR or BGN, based on €, евро or лв.
+- If amounts are shown in two currencies (e.g. BGN and EUR side by side), use the currency the line items are priced in for every amount, and mention the other currency's totals in notes.
+- Lines with negative values (e.g. Приспадане на авансово плащане, credit or return lines) are real lines: keep the minus sign on quantity and/or line total exactly as printed, and mention it in notes.
 - payment_method: as printed, in Bulgarian (e.g. "В брой", "Пощенски паричен превод (Еконт)", "Банков превод", "Карта"). null if not shown.
 - Never guess. If a value is not on the document, set it to null. If a value is present but hard to read (blur, fold, stamp over it, handwriting, cut off), give your best reading and list the field name in the matching unclear_fields array.
 - confidence: 0 to 100, how sure you are that the extracted values are exactly right, for the invoice and for each line. Use 95 or above only for a clean, fully legible document whose totals add up.
+- confidence_reason (invoice and each line): short, plain Bulgarian for a non-technical bookkeeper. Say what stopped you being fully sure and exactly what to compare against the original, naming the field and line, e.g. "Цифрите в единичната цена на ред 2 са размазани – сравнете с оригинала." Empty string only when confidence is 95 or above.
 - notes: short, in Bulgarian, only when something needs the reader's attention (discount applied, prices converted from VAT-inclusive, page cut off, etc.). Otherwise an empty string.
 - If the file is not an invoice or receipt, return an empty invoices array and explain in "problem", in Bulgarian.`;
 
@@ -376,15 +408,17 @@ const TOOL = {
                   line_total_excl_vat: NULLABLE_NUM,
                   unclear_fields: { type:'array', items:{ type:'string', enum: LINE_FIELDS } },
                   confidence: { type:'integer', minimum:0, maximum:100 },
+                  confidence_reason: { type:'string' },
                 },
-                required: ['description','quantity','unit_price','line_total_excl_vat','unclear_fields','confidence'],
+                required: ['description','quantity','unit_price','line_total_excl_vat','unclear_fields','confidence','confidence_reason'],
               },
             },
             unclear_fields: { type:'array', items:{ type:'string', enum: INV_FIELDS } },
             confidence: { type:'integer', minimum:0, maximum:100 },
+            confidence_reason: { type:'string' },
             notes: { type:'string' },
           },
-          required: [...INV_FIELDS, 'lines', 'unclear_fields', 'confidence', 'notes'],
+          required: [...INV_FIELDS, 'lines', 'unclear_fields', 'confidence', 'confidence_reason', 'notes'],
         },
       },
       problem: NULLABLE_STR,
@@ -434,6 +468,11 @@ function fmt(v, type) {
   return v.toLocaleString('bg-BG', o);
 }
 const fmtMoney = v => fmt(v, 'money');
+const labelOf = k => (COLUMNS.find(c => c.key === k) || {}).label || k;
+function joinParts(parts) {
+  const out = parts.filter(Boolean).map(p => p.trim().replace(/[.\s]+$/, ''));
+  return out.length ? out.join('. ') + '.' : null;
+}
 function confBand(c) { return c >= 90 ? 'hi' : c >= 70 ? 'mid' : 'lo'; }
 
 // ─────────────────────────────────────────────
@@ -482,6 +521,7 @@ function normInvoice(raw, fileName) {
       line_total_excl_vat: parseNum(l.line_total_excl_vat),
       unclear: (l.unclear_fields || []).filter(k => LINE_FIELDS.includes(k)),
       confidence: clampConf(l.confidence),
+      reason: cleanStr(l.confidence_reason) || '',
       edited: false,
     };
     return line;
@@ -489,6 +529,7 @@ function normInvoice(raw, fileName) {
   return {
     id: uid(), file: fileName, created: new Date().toISOString(),
     fields: f, unclear: [...unclear], confidence: clampConf(raw.confidence),
+    reason: cleanStr(raw.confidence_reason) || '',
     notes: cleanStr(raw.notes) || '', edited: false, lines,
   };
 }
@@ -513,54 +554,95 @@ function invoiceChecks(inv) {
       ((f.supplier_eik && o.fields.supplier_eik === f.supplier_eik) || (f.supplier_name && o.fields.supplier_name === f.supplier_name)));
     if (dup) list.push('Възможен дубликат: фактура с този номер и доставчик вече е в таблицата');
   }
+  if (f.supplier_eik && !/^\d{9}(\d{4})?$/.test(f.supplier_eik)) list.push('ЕИК на доставчика трябва да е 9 или 13 цифри');
   if (!inv.lines.length) list.push('Не са открити редове със стоки или услуги');
   return { list, mathBad };
 }
 
-// One row per line item. Invoice details repeat; invoice totals only on the first line.
+// One row per line item, then a summary row per invoice holding the totals.
+function invCell(inv, key) {
+  const value = inv.fields[key];
+  const bad = inv.unclear.includes(key) || (value == null && REQUIRED.has(key));
+  return { value, bad, missing: value == null && !bad };
+}
+function lineIssues(l) {
+  const parts = [];
+  if (l.reason) parts.push(l.reason);
+  const unclear = l.unclear.map(labelOf);
+  const missing = LINE_FIELDS.filter(k => REQUIRED.has(k) && l[k] == null && !l.unclear.includes(k)).map(labelOf);
+  if (unclear.length) parts.push('Неясно на този ред: ' + unclear.join(', '));
+  if (missing.length) parts.push('Не е намерено на този ред: ' + missing.join(', '));
+  return parts;
+}
+function lineRow(inv, l, i) {
+  const cells = {};
+  for (const c of COLUMNS) {
+    if (c.level === 'inv') cells[c.key] = c.totals ? { skip:true } : invCell(inv, c.key);
+    else if (c.level === 'line') {
+      const value = l[c.key];
+      cells[c.key] = { value, bad: l.unclear.includes(c.key) || (value == null && REQUIRED.has(c.key)) };
+    }
+  }
+  cells.file = { value: inv.file };
+  cells.confidence = { value: l.confidence };
+  cells.check = { value: joinParts(lineIssues(l)) };
+  cells.notes = { value: l.edited ? 'Редът е коригиран ръчно.' : null };
+  return { kind:'line', inv, line:l, invIndex:i, rowId:l.id, cells };
+}
+function summaryLabel(inv) {
+  const n = inv.lines.length;
+  const num = inv.fields.invoice_number ? ` № ${inv.fields.invoice_number}` : '';
+  return `ОБЩО ЗА ФАКТУРА${num} (${n} ${pl(n,'ред','реда')})`;
+}
+function summaryRow(inv, i) {
+  const checks = invoiceChecks(inv);
+  const cells = {};
+  for (const c of COLUMNS) {
+    if (c.level === 'inv') cells[c.key] = invCell(inv, c.key);
+    else if (c.level === 'line') cells[c.key] = c.key === 'description' ? { value: summaryLabel(inv), label:true } : { skip:true };
+  }
+  cells.file = { value: inv.file };
+  cells.confidence = { value: Math.max(0, inv.confidence - (checks.mathBad ? 20 : 0)) };
+  const parts = [];
+  if (inv.reason) parts.push(inv.reason);
+  parts.push(...checks.list);
+  const unclear = inv.unclear.map(labelOf);
+  const missing = INV_FIELDS.filter(k => REQUIRED.has(k) && inv.fields[k] == null && !inv.unclear.includes(k)).map(labelOf);
+  if (unclear.length) parts.push('Неясно: ' + unclear.join(', '));
+  if (missing.length) parts.push('Не е намерено: ' + missing.join(', '));
+  cells.check = { value: joinParts(parts) };
+  const notes = [];
+  if (inv.notes) notes.push(inv.notes);
+  if (inv.edited) notes.push('Данните за фактурата са коригирани ръчно');
+  cells.notes = { value: joinParts(notes) };
+  return { kind:'sum', inv, line:null, invIndex:i, rowId:'sum', cells, lineCount: inv.lines.length };
+}
 function buildRows() {
   const rows = [];
   invoices.forEach((inv, i) => {
-    const checks = invoiceChecks(inv);
-    const lines = inv.lines.length ? inv.lines : [null];
-    lines.forEach((l, j) => {
-      const cells = {};
-      for (const c of COLUMNS) {
-        if (c.level === 'inv') {
-          if (c.firstOnly && j > 0) { cells[c.key] = { skip:true }; continue; }
-          const value = inv.fields[c.key];
-          const bad = inv.unclear.includes(c.key) || (value == null && REQUIRED.has(c.key));
-          cells[c.key] = { value, bad, missing: value == null && !bad };
-        } else if (c.level === 'line') {
-          const value = l ? l[c.key] : null;
-          cells[c.key] = { value, bad: l ? (l.unclear.includes(c.key) || (value == null && REQUIRED.has(c.key))) : true };
-        } else if (c.key === 'file') {
-          cells.file = { value: inv.file };
-        } else if (c.key === 'confidence') {
-          let conf = Math.min(inv.confidence, l ? l.confidence : inv.confidence);
-          if (checks.mathBad) conf -= 20;
-          cells.confidence = { value: Math.max(0, conf) };
-        } else if (c.key === 'notes') {
-          const parts = [];
-          if (j === 0) {
-            if (inv.notes) parts.push(inv.notes);
-            parts.push(...checks.list);
-            if (inv.edited) parts.push('Данните за фактурата са коригирани ръчно');
-          }
-          if (l && l.edited) parts.push('Редът е коригиран ръчно');
-          cells.notes = { value: parts.join('. ').replace(/\.\./g, '.') || null };
-        }
-      }
-      rows.push({ inv, line: l, invIndex: i, lineIndex: j, cells });
-    });
+    inv.lines.forEach(l => rows.push(lineRow(inv, l, i)));
+    rows.push(summaryRow(inv, i));
   });
   return rows;
+}
+function countBad() {
+  let n = 0;
+  for (const inv of invoices) {
+    n += INV_FIELDS.filter(k => invCell(inv, k).bad).length;
+    for (const l of inv.lines) n += LINE_FIELDS.filter(k => l.unclear.includes(k) || (l[k] == null && REQUIRED.has(k))).length;
+  }
+  return n;
 }
 
 // ─────────────────────────────────────────────
 // Rendering the table
 // ─────────────────────────────────────────────
 const NUMERIC_TYPES = new Set(['qty','price','money','pct']);
+const CONF_HELP = {
+  hi:  'Вероятно всичко е вярно. Бърза проверка на платената сума е достатъчна.',
+  mid: 'Проверете нещата, посочени в колоната „Какво да проверите“.',
+  lo:  'Сравнете целия ред с оригиналния документ.',
+};
 
 function renderTable(focusTarget) {
   const rows = buildRows();
@@ -570,23 +652,27 @@ function renderTable(focusTarget) {
   $('legend').hidden = !has;
   $('exportBtn').disabled = !has;
 
-  const badCount = rows.reduce((n, r) => n + Object.values(r.cells).filter(c => c.bad).length, 0);
+  const badCount = countBad();
+  const lineCount = invoices.reduce((n, inv) => n + inv.lines.length, 0);
   $('summary').innerHTML = has
-    ? `${invoices.length} ${pl(invoices.length,'фактура','фактури')}, ${rows.length} ${pl(rows.length,'ред','реда')}` +
+    ? `${invoices.length} ${pl(invoices.length,'фактура','фактури')}, ${lineCount} ${pl(lineCount,'ред','реда')}` +
       (badCount ? `, <span class="flag">${badCount} ${pl(badCount,'клетка','клетки')} за проверка</span>` : ', няма неясни клетки')
     : '';
   if (!has) { $('tbody').innerHTML = ''; return; }
 
   $('thead').innerHTML = '<tr>' + COLUMNS.map(c => `<th class="${NUMERIC_TYPES.has(c.type) ? 'num' : ''}">${esc(c.label)}</th>`).join('') + '<th aria-label="Действия"></th></tr>';
 
+  let prevInv = null;
   $('tbody').innerHTML = rows.map(r => {
-    const cls = [r.invIndex % 2 ? 'alt' : '', r.lineIndex === 0 ? 'inv-start' : ''].join(' ');
+    const first = r.inv !== prevInv; prevInv = r.inv;
+    const cls = [r.invIndex % 2 ? 'alt' : '', first ? 'inv-start' : '', r.kind === 'sum' ? 'sum' : ''].join(' ');
     const tds = COLUMNS.map(c => cellHtml(c, r)).join('');
-    return `<tr class="${cls}">${tds}<td class="act"><button class="del" type="button" data-inv="${r.inv.id}" data-line="${r.line ? r.line.id : ''}" title="Изтрий реда" aria-label="Изтрий реда">✕</button></td></tr>`;
+    const delTitle = r.kind === 'sum' ? 'Изтрий цялата фактура' : 'Изтрий реда';
+    return `<tr class="${cls}">${tds}<td class="act"><button class="del" type="button" data-inv="${r.inv.id}" data-line="${r.line ? r.line.id : ''}" data-kind="${r.kind}" title="${delTitle}" aria-label="${delTitle}">✕</button></td></tr>`;
   }).join('');
 
   if (focusTarget) {
-    const sel = `td[data-inv="${focusTarget.inv}"][data-line="${focusTarget.line}"][data-key="${focusTarget.key}"]`;
+    const sel = `td[data-inv="${focusTarget.inv}"][data-row="${focusTarget.row}"][data-key="${focusTarget.key}"]`;
     const el = $('tbody').querySelector(sel);
     if (el) el.focus();
   }
@@ -596,7 +682,9 @@ function cellHtml(c, r) {
   const cell = r.cells[c.key];
   const numCls = NUMERIC_TYPES.has(c.type) ? 'num' : '';
   if (cell.skip) return `<td class="${numCls}"></td>`;
-  if (c.key === 'confidence') return `<td class="num"><span class="conf ${confBand(cell.value)}">${cell.value}%</span></td>`;
+  if (cell.label) return `<td class="desc sum-label">${esc(cell.value)}</td>`;
+  if (c.key === 'confidence') return `<td class="num"><span class="conf ${confBand(cell.value)}" title="${esc(CONF_HELP[confBand(cell.value)])}">${cell.value}%</span></td>`;
+  if (c.key === 'check') return `<td class="notes check">${esc(cell.value || '')}</td>`;
   if (c.key === 'notes') return `<td class="notes">${esc(cell.value || '')}</td>`;
   if (c.key === 'file') return `<td class="file" title="${esc(cell.value)}">${esc(cell.value)}</td>`;
 
@@ -604,7 +692,7 @@ function cellHtml(c, r) {
   const classes = [numCls, cell.bad ? 'bad' : '', cell.missing ? 'missing' : '', c.key === 'description' ? 'desc' : ''].join(' ');
   const editable = c.level === 'inv' || (c.level === 'line' && r.line);
   if (!editable) return `<td class="${classes}">${esc(display)}</td>`;
-  return `<td class="${classes}" contenteditable="true" spellcheck="false" data-inv="${r.inv.id}" data-line="${c.level === 'line' ? r.line.id : ''}" data-key="${c.key}"${cell.bad ? ' title="Неясно: проверете и коригирайте"' : ''}>${esc(display)}</td>`;
+  return `<td class="${classes}" contenteditable="true" spellcheck="false" data-inv="${r.inv.id}" data-row="${r.rowId}" data-line="${c.level === 'line' ? r.line.id : ''}" data-key="${c.key}"${cell.bad ? ' title="Неясно: проверете и коригирайте"' : ''}>${esc(display)}</td>`;
 }
 
 // ─────────────────────────────────────────────
@@ -659,17 +747,16 @@ tbody.addEventListener('focusout', e => {
   saveData();
 
   const next = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('td[contenteditable]');
-  renderTable(next ? { inv: next.dataset.inv, line: next.dataset.line, key: next.dataset.key } : null);
+  renderTable(next ? { inv: next.dataset.inv, row: next.dataset.row, key: next.dataset.key } : null);
 });
 tbody.addEventListener('click', e => {
   const btn = e.target.closest('.del');
   if (!btn) return;
   const inv = invoices.find(x => x.id === btn.dataset.inv);
   if (!inv) return;
-  const lastLine = !btn.dataset.line || inv.lines.length <= 1;
-  if (lastLine) {
+  if (btn.dataset.kind === 'sum') {
     const label = inv.fields.invoice_number ? `№ ${inv.fields.invoice_number}` : `от файл „${inv.file}“`;
-    if (!confirm(`Това ще изтрие цялата фактура ${label}. Продължаване?`)) return;
+    if (!confirm(`Това ще изтрие цялата фактура ${label} заедно с всички редове. Продължаване?`)) return;
     invoices = invoices.filter(x => x !== inv);
   } else {
     inv.lines = inv.lines.filter(l => l.id !== btn.dataset.line);
@@ -791,7 +878,10 @@ async function callClaude(block, fileName) {
   const body = {
     model: getModel(),
     max_tokens: 16000,
-    system: SYSTEM_PROMPT,
+    // Cache the instructions and table structure (identical on every call) so files
+    // processed within a few minutes of each other reuse them at a fraction of the price.
+    // Caching only affects billing; Claude sees exactly the same prompt either way.
+    system: [{ type:'text', text: SYSTEM_PROMPT, cache_control: { type:'ephemeral' } }],
     tools: [TOOL],
     messages: [{ role:'user', content: [block, { type:'text', text:`Файл: ${fileName}. Извлечи данните от всички фактури или касови бележки в него и ги запиши с инструмента record_invoices.` }] }],
   };
@@ -877,52 +967,106 @@ const XL_CONF = {
   lo:  { fill:{ type:'pattern', pattern:'solid', fgColor:{ argb:'FFFFC7CE' } }, font:{ color:{ argb:'FF9C0006' } } },
 };
 
+function xlHeader(ws) {
+  const head = ws.getRow(1);
+  head.font = { bold: true };
+  head.alignment = { vertical: 'middle', wrapText: true };
+  head.height = 32;
+  head.eachCell(cell => { cell.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFDCE4F7' } }; });
+}
+function xlWriteCell(cell, c, data) {
+  const v = data.value;
+  if (c.key === 'confidence') {
+    cell.value = v / 100; cell.numFmt = XL_FMT.pct; Object.assign(cell, XL_CONF[confBand(v)]);
+    return;
+  }
+  if (v == null) {
+    if (data.bad) { cell.value = UNCLEAR; Object.assign(cell, XL_BAD); }
+    else if (data.missing) { cell.value = MISSING; Object.assign(cell, XL_MISSING); }
+    return;
+  }
+  if (c.type === 'date') {
+    const m = String(v).match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+    if (m) { cell.value = new Date(Date.UTC(+m[3], +m[2] - 1, +m[1])); cell.numFmt = XL_FMT.date; }
+    else cell.value = String(v);
+  } else if (XL_FMT[c.type] && isNum(v)) {
+    cell.value = v; cell.numFmt = XL_FMT[c.type];
+  } else {
+    cell.value = String(v);
+  }
+  if (data.bad) Object.assign(cell, XL_BAD);
+  cell.alignment = (c.key === 'description' || c.key === 'notes' || c.key === 'check') ? { wrapText:true, vertical:'top' } : { vertical:'top' };
+}
+const XL_SUM_FILL = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFEEF2FB' } };
+const XL_SUM_BORDER = { style:'medium', color:{ argb:'FF2448A8' } };
+
+// Columns for the one-row-per-invoice sheet
+const INVOICE_SHEET_COLS = [
+  ...COLUMNS.filter(c => c.level === 'inv' && !c.totals),
+  { key:'lineCount', label:'Брой редове', level:'meta', type:'qty', w:10 },
+  ...COLUMNS.filter(c => c.totals),
+  ...COLUMNS.filter(c => c.level === 'meta'),
+];
+
 async function exportExcel() {
   if (typeof ExcelJS === 'undefined') { alert('Библиотеката за Excel не се зареди. Проверете интернет връзката и презаредете страницата.'); return; }
   const rows = buildRows();
   if (!rows.length) return;
   const wb = new ExcelJS.Workbook();
   wb.created = new Date();
-  const ws = wb.addWorksheet('Фактури', { views:[{ state:'frozen', ySplit:1 }] });
+
+  // Sheet 1: every line, with a summary row after each invoice
+  const ws = wb.addWorksheet('Всички редове', { views:[{ state:'frozen', ySplit:1 }] });
   ws.columns = COLUMNS.map(c => ({ header: c.label, key: c.key, width: c.w }));
-
-  const head = ws.getRow(1);
-  head.font = { bold: true };
-  head.alignment = { vertical: 'middle', wrapText: true };
-  head.height = 32;
-  head.eachCell(cell => { cell.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFE6ECFA' } }; });
-
+  xlHeader(ws);
   for (const r of rows) {
     const row = ws.addRow([]);
     COLUMNS.forEach((c, idx) => {
       const data = r.cells[c.key];
       const cell = row.getCell(idx + 1);
+      if (r.kind === 'sum') { cell.fill = XL_SUM_FILL; cell.font = { bold:true }; cell.border = { bottom: XL_SUM_BORDER }; }
       if (data.skip) return;
-      let v = data.value;
-      if (c.key === 'confidence') {
-        cell.value = v / 100; cell.numFmt = XL_FMT.pct; Object.assign(cell, XL_CONF[confBand(v)]);
-        return;
+      xlWriteCell(cell, c, data);
+      if (r.kind === 'sum') {
+        if (!data.bad && !data.missing && c.key !== 'confidence') { cell.fill = XL_SUM_FILL; cell.font = { bold:true }; }
+        cell.border = { bottom: XL_SUM_BORDER };
       }
-      if (v == null) {
-        if (data.bad) { cell.value = UNCLEAR; Object.assign(cell, XL_BAD); }
-        else if (data.missing) { cell.value = MISSING; Object.assign(cell, XL_MISSING); }
-        return;
-      }
-      if (c.type === 'date') {
-        const m = String(v).match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-        if (m) { cell.value = new Date(Date.UTC(+m[3], +m[2] - 1, +m[1])); cell.numFmt = XL_FMT.date; }
-        else cell.value = String(v);
-      } else if (XL_FMT[c.type] && isNum(v)) {
-        cell.value = v; cell.numFmt = XL_FMT[c.type];
-      } else {
-        cell.value = String(v);
-      }
-      if (data.bad) Object.assign(cell, XL_BAD);
-      if (c.key === 'description' || c.key === 'notes') cell.alignment = { wrapText: true, vertical: 'top' };
-      else cell.alignment = { vertical: 'top' };
     });
   }
-  ws.autoFilter = { from: { row:1, column:1 }, to: { row:1, column: COLUMNS.length } };
+  ws.autoFilter = { from:{ row:1, column:1 }, to:{ row:1, column: COLUMNS.length } };
+
+  // Sheet 2: one row per invoice
+  const ws2 = wb.addWorksheet('По фактури', { views:[{ state:'frozen', ySplit:1 }] });
+  ws2.columns = INVOICE_SHEET_COLS.map(c => ({ header: c.label, key: c.key, width: c.w }));
+  xlHeader(ws2);
+  const sums = rows.filter(r => r.kind === 'sum');
+  for (const r of sums) {
+    const row = ws2.addRow([]);
+    INVOICE_SHEET_COLS.forEach((c, idx) => {
+      const data = c.key === 'lineCount' ? { value: r.lineCount } : r.cells[c.key];
+      xlWriteCell(row.getCell(idx + 1), c, data);
+    });
+  }
+  ws2.autoFilter = { from:{ row:1, column:1 }, to:{ row:1, column: INVOICE_SHEET_COLS.length } };
+
+  // Grand total, only when every invoice uses the same currency
+  const currencies = new Set(invoices.map(inv => inv.fields.currency || ''));
+  if (sums.length > 1 && currencies.size === 1 && !currencies.has('')) {
+    const totalRow = ws2.addRow([]);
+    const first = 2, last = sums.length + 1;
+    INVOICE_SHEET_COLS.forEach((c, idx) => {
+      const cell = totalRow.getCell(idx + 1);
+      cell.fill = XL_SUM_FILL; cell.font = { bold:true }; cell.border = { top: XL_SUM_BORDER };
+      if (idx === 0) cell.value = 'ОБЩО';
+      if (c.key === 'currency') cell.value = [...currencies][0];
+      if (c.totals) {
+        const col = ws2.getColumn(idx + 1).letter;
+        const result = invoices.reduce((a, inv) => a + (isNum(inv.fields[c.key]) ? inv.fields[c.key] : 0), 0);
+        cell.value = { formula: `SUM(${col}${first}:${col}${last})`, result: Math.round(result * 100) / 100 };
+        cell.numFmt = XL_FMT.money;
+      }
+    });
+  }
 
   const buf = await wb.xlsx.writeBuffer();
   const blob = new Blob([buf], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
