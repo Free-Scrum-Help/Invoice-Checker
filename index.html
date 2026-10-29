@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Фактури към Excel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #F3F6FA;
+  --surface: #FFFFFF;
+  --ink: #14213D;
+  --muted: #5B6476;
+  --line: #D9E0EA;
+  --stamp: #2448A8;
+  --stamp-soft: #E6ECFA;
+  --on-stamp: #FFFFFF;
+  --bad: #B42318;
+  --bad-bg: #FDE7E5;
+  --warn: #8A5A00;
+  --warn-bg: #FFF3D6;
+  --ok: #1D6B3A;
+  --ok-bg: #E3F4E8;
+  --row-alt: #F7F9FC;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #0F1520;
+    --surface: #161E2C;
+    --ink: #E6EBF3;
+    --muted: #9AA5B8;
+    --line: #2A3445;
+    --stamp: #8EA8FF;
+    --stamp-soft: #1E2A4A;
+    --on-stamp: #0F1520;
+    --bad: #FF9B8F;
+    --bad-bg: #3A1A18;
+    --warn: #F2C46B;
+    --warn-bg: #3A2E12;
+    --ok: #7FD69A;
+    --ok-bg: #15301F;
+    --row-alt: #131A26;
+  }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Golos Text', system-ui, 'Segoe UI', Arial, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--stamp); outline-offset: 2px; }
+
+.wrap { max-width: 1400px; margin: 0 auto; padding: 32px 28px 64px; }
+
+/* Header */
+.top { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-bottom: 28px; }
+.top h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.01em; line-height: 1.15; }
+.top p { color: var(--muted); max-width: 62ch; margin-top: 6px; }
+.top-actions { display: flex; align-items: center; gap: 10px; }
+.key-chip { font-size: 0.85rem; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.key-chip.ok { color: var(--ok); background: var(--ok-bg); border-color: transparent; }
+
+/* Buttons */
+.btn {
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  padding: 9px 16px; border-radius: 8px; cursor: pointer; font-weight: 500;
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.btn:hover { border-color: var(--stamp); }
+.btn-primary { background: var(--stamp); border-color: var(--stamp); color: var(--on-stamp); font-weight: 600; }
+.btn-primary:hover { filter: brightness(1.08); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; filter: none; }
+.btn-quiet { border-color: transparent; background: transparent; color: var(--muted); padding: 6px 10px; }
+.btn-quiet:hover { color: var(--bad); border-color: transparent; }
+
+/* Notice */
+.notice {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  background: var(--warn-bg); color: var(--warn); border-radius: var(--radius);
+  padding: 14px 18px; margin-bottom: 20px;
+}
+.notice[hidden] { display: none; }
+
+/* Upload */
+.upload { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(280px, 1.2fr); gap: 20px; margin-bottom: 28px; }
+.drop {
+  border: 2px dashed var(--stamp); border-radius: 16px; background: var(--surface);
+  padding: 28px; display: flex; align-items: center; gap: 22px; cursor: pointer;
+  transition: background 0.15s;
+}
+.drop.over { background: var(--stamp-soft); }
+.seal {
+  flex-shrink: 0; width: 92px; height: 92px; border-radius: 50%;
+  border: 3px solid var(--stamp); color: var(--stamp);
+  display: flex; align-items: center; justify-content: center; position: relative;
+  transform: rotate(-8deg);
+}
+.seal::before { content: ''; position: absolute; inset: 6px; border-radius: 50%; border: 1px solid var(--stamp); }
+.seal svg { width: 34px; height: 34px; }
+.drop strong { display: block; font-size: 1.1rem; margin-bottom: 4px; }
+.drop span { color: var(--muted); font-size: 0.92rem; }
+.drop input { display: none; }
+
+.queue { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+.queue-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.queue-head h2 { font-size: 1.05rem; font-weight: 600; }
+.queue ul { list-style: none; display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
+.queue li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; background: var(--row-alt); font-size: 0.92rem; }
+.q-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-status { font-size: 0.85rem; color: var(--muted); white-space: nowrap; }
+.q-status.working { color: var(--stamp); }
+.q-status.done { color: var(--ok); }
+.q-status.error { color: var(--bad); white-space: normal; text-align: right; max-width: 55%; }
+.q-empty { color: var(--muted); font-size: 0.92rem; }
+.queue-foot { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+/* Results */
+.results-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+.results-head h2 { font-size: 1.35rem; font-weight: 700; }
+.summary { color: var(--muted); font-size: 0.92rem; margin-top: 2px; }
+.summary .flag { color: var(--bad); font-weight: 600; }
+.results-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.save-state { font-size: 0.82rem; color: var(--muted); }
+.save-state.error { color: var(--bad); }
+.legend { color: var(--muted); font-size: 0.88rem; margin-bottom: 10px; }
+.legend i { font-style: normal; display: inline-block; padding: 0 6px; border-radius: 4px; background: var(--bad-bg); color: var(--bad); font-weight: 600; }
+
+.table-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: auto; max-height: 72vh; }
+table { border-collapse: separate; border-spacing: 0; font-size: 0.88rem; min-width: 100%; }
+thead th {
+  position: sticky; top: 0; z-index: 2; background: var(--surface);
+  text-align: left; font-weight: 600; padding: 10px 12px; border-bottom: 2px solid var(--line);
+  vertical-align: bottom; min-width: 90px;
+}
+th.num, td.num { text-align: right; }
+tbody td { padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tbody tr.alt td { background: var(--row-alt); }
+tbody tr.inv-start td { border-top: 2px solid var(--line); }
+td[contenteditable="true"] { cursor: text; }
+td[contenteditable="true"]:hover { box-shadow: inset 0 0 0 1px var(--line); }
+td[contenteditable="true"]:focus { outline: none; box-shadow: inset 0 0 0 2px var(--stamp); background: var(--surface); }
+td.bad, tbody tr.alt td.bad { background: var(--bad-bg); color: var(--bad); font-weight: 600; }
+td.missing { color: var(--muted); font-style: italic; }
+td.desc { min-width: 280px; }
+td.notes { min-width: 240px; color: var(--muted); }
+td.file { color: var(--muted); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.conf { display: inline-block; padding: 1px 8px; border-radius: 999px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.conf.hi { background: var(--ok-bg); color: var(--ok); }
+.conf.mid { background: var(--warn-bg); color: var(--warn); }
+.conf.lo { background: var(--bad-bg); color: var(--bad); }
+td.act { width: 40px; text-align: center; }
+.del { border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 2px 6px; border-radius: 6px; }
+.del:hover { color: var(--bad); background: var(--bad-bg); }
+
+.empty { background: var(--surface); border: 1px dashed var(--line); border-radius: var(--radius); padding: 40px 24px; text-align: center; color: var(--muted); }
+
+/* Settings dialog */
+dialog { border: none; border-radius: 16px; padding: 0; background: var(--surface); color: var(--ink); width: min(520px, 92vw); box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+dialog::backdrop { background: rgba(10, 18, 32, 0.5); }
+.dlg { padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+.dlg h2 { font-size: 1.25rem; }
+.dlg p { color: var(--muted); font-size: 0.9rem; }
+.dlg label { display: flex; flex-direction: column; gap: 6px; font-weight: 500; font-size: 0.95rem; }
+.dlg input[type="password"], .dlg input[type="text"], .dlg select {
+  padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); font-weight: 400;
+}
+.dlg .row { display: flex; align-items: center; gap: 8px; font-weight: 400; flex-direction: row; font-size: 0.9rem; }
+.dlg .hint { font-size: 0.85rem; color: var(--warn); min-height: 1.2em; }
+.dlg-actions { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.dlg-actions div { display: flex; gap: 10px; }
+.dlg a { color: var(--stamp); }
+
+@media (max-width: 820px) {
+  .wrap { padding: 20px 14px 48px; }
+  .upload { grid-template-columns: 1fr; }
+  .top h1 { font-size: 1.6rem; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <h1>Фактури към Excel</h1>
+      <p>Качете снимки или PDF файлове на фактури. Данните се извличат автоматично в таблица, която можете да проверите, коригирате и изтеглите като Excel.</p>
+    </div>
+    <div class="top-actions">
+      <span class="key-chip" id="keyChip">Няма API ключ</span>
+      <button class="btn" id="openSettings" type="button">Настройки</button>
+    </div>
+  </header>
+
+  <div class="notice" id="keyNotice" hidden>
+    <span>За да започнете, добавете API ключ на Anthropic в Настройки.</span>
+    <button class="btn" type="button" id="noticeSettings">Добави ключ</button>
+  </div>
+
+  <section class="upload">
+    <label class="drop" id="drop">
+      <div class="seal" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13h8M8 17h5"/></svg>
+      </div>
+      <div>
+        <strong>Пуснете файловете тук или щракнете, за да ги изберете</strong>
+        <span>Снимки (JPG, PNG, WEBP) и PDF. Може няколко наведнъж.</span>
+      </div>
+      <input type="file" id="fileInput" multiple accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.pdf">
+    </label>
+
+    <div class="queue">
+      <div class="queue-head">
+        <h2>Файлове за обработка</h2>
+        <button class="btn-quiet btn" type="button" id="clearQueue">Премахни обработените</button>
+      </div>
+      <ul id="queueList"></ul>
+      <div class="queue-foot">
+        <button class="btn btn-primary" type="button" id="processBtn" disabled>Извлечи данните</button>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="results-head">
+      <div>
+        <h2>Таблица</h2>
+        <div class="summary" id="summary"></div>
+      </div>
+      <div class="results-actions">
+        <span class="save-state" id="saveState"></span>
+        <button class="btn" type="button" id="clearAll">Изчисти таблицата</button>
+        <button class="btn btn-primary" type="button" id="exportBtn" disabled>Изтегли Excel</button>
+      </div>
+    </div>
+    <p class="legend" id="legend" hidden><i>Червено</i> означава неясна стойност или липсващо задължително поле. „ЛИПСВА“ означава, че данните ги няма в документа. Щракнете върху клетка, за да я коригирате.</p>
+    <div class="empty" id="empty">Все още няма данни. Добавете файлове отгоре и натиснете „Извлечи данните“.</div>
+    <div class="table-wrap" id="tableWrap" hidden>
+      <table>
+        <thead id="thead"></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<dialog id="settings">
+  <form class="dlg" method="dialog" id="settingsForm">
+    <h2>Настройки</h2>
+    <p>Ключът се пази само в този браузър и се изпраща единствено към Anthropic при обработка на файл. Създайте ключ в <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> и задайте месечен лимит за разходи.</p>
+    <label>API ключ на Anthropic
+      <input type="password" id="keyInput" autocomplete="off" spellcheck="false" placeholder="sk-ant-…">
+    </label>
+    <label class="row"><input type="checkbox" id="showKey"> Покажи ключа</label>
+    <div class="hint" id="keyHint"></div>
+    <label>Модел
+      <select id="modelSelect"></select>
+    </label>
+    <div class="dlg-actions">
+      <button class="btn btn-quiet" type="button" id="removeKey">Премахни ключа</button>
+      <div>
+        <button class="btn" type="button" id="cancelSettings">Отказ</button>
+        <button class="btn btn-primary" type="button" id="saveSettings">Запази</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
+<script>
+// ─────────────────────────────────────────────
+// Config
+// ─────────────────────────────────────────────
+const LS_DATA  = 'fakturiExcel.data.v1';
+const LS_KEY   = 'fakturiExcel.apiKey';
+const LS_MODEL = 'fakturiExcel.model';
+const API_URL  = 'https://api.anthropic.com/v1/messages';
+const MODELS = [
+  ['claude-sonnet-5-5', 'Sonnet 5.5 (препоръчан)'],
+  ['claude-opus-5-5',   'Opus 5.5 (най-точен, по-скъп)'],
+  ['claude-haiku-5-5',  'Haiku 5.5 (най-бърз и евтин)'],
+];
+const DEFAULT_MODEL = MODELS[0][0];
+
+const INV_FIELDS  = ['invoice_date','buyer_name','invoice_number','supplier_name','supplier_eik','supplier_vat_number','currency','payment_method','subtotal_excl_vat','vat_amount','total_paid'];
+const LINE_FIELDS = ['description','quantity','unit_price','line_total_excl_vat'];
+const NUM_FIELDS  = new Set(['quantity','unit_price','line_total_excl_vat','subtotal_excl_vat','vat_amount','total_paid']);
+const REQUIRED    = new Set(['invoice_date','buyer_name','invoice_number','supplier_name','description','quantity','unit_price','line_total_excl_vat','subtotal_excl_vat','vat_amount','total_paid']);
+const UNCLEAR = 'НЕЯСНО';
+const MISSING = 'ЛИПСВА';
+
+// Table and Excel columns, in order
+const COLUMNS = [
+  { key:'invoice_date',        label:'Дата на фактура',            level:'inv',  type:'date',  w:14 },
+  { key:'buyer_name',          label:'Купувач',                    level:'inv',  type:'text',  w:28 },
+  { key:'invoice_number',      label:'Номер на фактура',           level:'inv',  type:'text',  w:18 },
+  { key:'supplier_name',       label:'Доставчик',                  level:'inv',  type:'text',  w:28 },
+  { key:'supplier_eik',        label:'ЕИК на доставчик',           level:'inv',  type:'text',  w:14 },
+  { key:'supplier_vat_number', label:'ДДС № на доставчик',         level:'inv',  type:'text',  w:16 },
+  { key:'description',         label:'Описание на стока/услуга',   level:'line', type:'text',  w:55 },
+  { key:'quantity',            label:'Количество',                 level:'line', type:'qty',   w:11 },
+  { key:'unit_price',          label:'Единична цена без ДДС',      level:'line', type:'price', w:14 },
+  { key:'line_total_excl_vat', label:'Стойност без ДДС',           level:'line', type:'money', w:14 },
+  { key:'subtotal_excl_vat',   label:'Обща сума без ДДС',          level:'inv',  type:'money', w:15, firstOnly:true },
+  { key:'vat_amount',          label:'ДДС (за фактурата)',         level:'inv',  type:'money', w:14, firstOnly:true },
+  { key:'total_paid',          label:'Платена сума с ДДС',         level:'inv',  type:'money', w:15, firstOnly:true },
+  { key:'currency',            label:'Валута',                     level:'inv',  type:'text',  w:8 },
+  { key:'payment_method',      label:'Начин на плащане',           level:'inv',  type:'text',  w:24 },
+  { key:'file',                label:'Файл',                       level:'meta', type:'text',  w:30 },
+  { key:'confidence',          label:'Увереност',                  level:'meta', type:'pct',   w:11 },
+  { key:'notes',               label:'Бележки',                    level:'meta', type:'text',  w:50 },
+];
+
+const SYSTEM_PROMPT = `You extract data from Bulgarian purchase invoices (фактури) and fiscal receipts (фискални бонове / касови бележки) for bookkeeping. Read the document carefully and call record_invoices exactly once.
+
+Rules:
+- One entry in "invoices" per invoice or receipt in the file (usually one). A multi-page PDF of one invoice is one entry.
+- Copy text exactly as printed, in its original language and script (usually Bulgarian Cyrillic). Do not translate or correct names.
+- buyer_name: the buyer/recipient (Получател / Купувач). supplier_name: the seller/issuer (Доставчик / Продавач, or the company printed at the top of a receipt).
+- supplier_eik: the supplier's ЕИК, digits only. supplier_vat_number: the supplier's ДДС номер / ИН по ЗДДС as printed (e.g. BG123456789).
+- invoice_number: the invoice number (№ / Номер / Фактура №) as printed, keeping leading zeros.
+- invoice_date: date of issue (Дата на издаване / Дата) as DD.MM.YYYY. If only the tax event date is shown, use that.
+- Numbers: plain JSON numbers with a dot as decimal separator. No thousands separators or currency symbols.
+- lines: every goods or service line. description = the full name as printed. quantity, unit_price and line_total_excl_vat must EXCLUDE VAT. If the document only shows prices including VAT (typical for fiscal receipts), convert them to excluding VAT using the stated VAT rate (unit price to 4 decimals, line total to 2) and say so in notes.
+- Discounts: line values must reflect what was actually paid. If a discount (отстъпка) applies, spread it across the lines in proportion to their value so that the line totals add up to subtotal_excl_vat, then set unit_price = line_total_excl_vat / quantity (4 decimals). Mention the discount in notes.
+- subtotal_excl_vat = Данъчна основа for the whole document. vat_amount = total ДДС for the whole document. total_paid = the final amount actually payable or paid including VAT, after any discounts (Сума за плащане / Обща сума / Всичко).
+- currency: ISO code, EUR or BGN, based on €, евро or лв.
+- payment_method: as printed, in Bulgarian (e.g. "В брой", "Пощенски паричен превод (Еконт)", "Банков превод", "Карта"). null if not shown.
+- Never guess. If a value is not on the document, set it to null. If a value is present but hard to read (blur, fold, stamp over it, handwriting, cut off), give your best reading and list the field name in the matching unclear_fields array.
+- confidence: 0 to 100, how sure you are that the extracted values are exactly right, for the invoice and for each line. Use 95 or above only for a clean, fully legible document whose totals add up.
+- notes: short, in Bulgarian, only when something needs the reader's attention (discount applied, prices converted from VAT-inclusive, page cut off, etc.). Otherwise an empty string.
+- If the file is not an invoice or receipt, return an empty invoices array and explain in "problem", in Bulgarian.`;
+
+const NULLABLE_STR = { type:['string','null'] };
+const NULLABLE_NUM = { type:['number','null'] };
+const TOOL = {
+  name: 'record_invoices',
+  description: 'Record the data extracted from the invoices or receipts in the file.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      invoices: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            invoice_date:        { ...NULLABLE_STR, description:'DD.MM.YYYY' },
+            buyer_name:          NULLABLE_STR,
+            invoice_number:      NULLABLE_STR,
+            supplier_name:       NULLABLE_STR,
+            supplier_eik:        NULLABLE_STR,
+            supplier_vat_number: NULLABLE_STR,
+            currency:            NULLABLE_STR,
+            payment_method:      NULLABLE_STR,
+            subtotal_excl_vat:   NULLABLE_NUM,
+            vat_amount:          NULLABLE_NUM,
+            total_paid:          NULLABLE_NUM,
+            lines: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  description:         NULLABLE_STR,
+                  quantity:            NULLABLE_NUM,
+                  unit_price:          NULLABLE_NUM,
+                  line_total_excl_vat: NULLABLE_NUM,
+                  unclear_fields: { type:'array', items:{ type:'string', enum: LINE_FIELDS } },
+                  confidence: { type:'integer', minimum:0, maximum:100 },
+                },
+                required: ['description','quantity','unit_price','line_total_excl_vat','unclear_fields','confidence'],
+              },
+            },
+            unclear_fields: { type:'array', items:{ type:'string', enum: INV_FIELDS } },
+            confidence: { type:'integer', minimum:0, maximum:100 },
+            notes: { type:'string' },
+          },
+          required: [...INV_FIELDS, 'lines', 'unclear_fields', 'confidence', 'notes'],
+        },
+      },
+      problem: NULLABLE_STR,
+    },
+    required: ['invoices'],
+  },
+};
+
+// ─────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const isNum = v => typeof v === 'number' && isFinite(v);
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function lsGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); return true; } catch { return false; } }
+function lsDel(k) { try { localStorage.removeItem(k); } catch {} }
+
+function cleanStr(v) { if (v == null) return null; const s = String(v).trim(); return s || null; }
+function parseNum(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') return isFinite(v) ? v : null;
+  let s = String(v).replace(/[\s\u00a0€]|лв\.?|eur|bgn/gi, '');
+  if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
+  else s = s.replace(',', '.');
+  const n = Number(s);
+  return s !== '' && isFinite(n) ? n : null;
+}
+function clampConf(v) { const n = Number(v); return isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 50; }
+function normDate(s) {
+  if (!s) return null;
+  s = String(s).trim();
+  let m = s.match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
+  if (m) return `${m[3].padStart(2,'0')}.${m[2].padStart(2,'0')}.${m[1]}`;
+  m = s.match(/^(\d{1,2})[-./](\d{1,2})[-./](\d{4})/);
+  if (m) return `${m[1].padStart(2,'0')}.${m[2].padStart(2,'0')}.${m[3]}`;
+  return null;
+}
+function pl(n, one, many) { return n === 1 ? one : many; }
+function fmt(v, type) {
+  if (!isNum(v)) return v == null ? '' : String(v);
+  const o = type === 'money' ? { minimumFractionDigits:2, maximumFractionDigits:2 }
+          : type === 'price' ? { minimumFractionDigits:2, maximumFractionDigits:4 }
+          : { minimumFractionDigits:0, maximumFractionDigits:3 };
+  return v.toLocaleString('bg-BG', o);
+}
+const fmtMoney = v => fmt(v, 'money');
+function confBand(c) { return c >= 90 ? 'hi' : c >= 70 ? 'mid' : 'lo'; }
+
+// ─────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────
+let invoices = [];   // saved to localStorage
+let queue = [];      // files in this session only
+let running = false;
+
+function loadData() {
+  try {
+    const d = JSON.parse(lsGet(LS_DATA) || 'null');
+    if (d && Array.isArray(d.invoices)) invoices = d.invoices;
+  } catch {}
+}
+function saveData() {
+  const ok = lsSet(LS_DATA, JSON.stringify({ version:1, invoices }));
+  const el = $('saveState');
+  el.textContent = ok ? 'Запазено в браузъра' : 'Грешка при запис в браузъра';
+  el.className = 'save-state' + (ok ? '' : ' error');
+}
+const getKey = () => lsGet(LS_KEY) || '';
+const getModel = () => lsGet(LS_MODEL) || DEFAULT_MODEL;
+
+// ─────────────────────────────────────────────
+// Turning a model response into stored invoices
+// ─────────────────────────────────────────────
+function normInvoice(raw, fileName) {
+  const f = {};
+  for (const k of INV_FIELDS) f[k] = NUM_FIELDS.has(k) ? parseNum(raw[k]) : cleanStr(raw[k]);
+  const unclear = new Set((raw.unclear_fields || []).filter(k => INV_FIELDS.includes(k)));
+  if (f.invoice_date) {
+    const nd = normDate(f.invoice_date);
+    if (nd) f.invoice_date = nd; else unclear.add('invoice_date');
+  }
+  if (f.supplier_eik) f.supplier_eik = f.supplier_eik.replace(/^BG/i, '').replace(/\s/g, '');
+  if (f.currency) f.currency = f.currency.toUpperCase();
+  for (const k of NUM_FIELDS) if (k in f && raw[k] != null && f[k] == null) unclear.add(k);
+
+  const lines = (Array.isArray(raw.lines) ? raw.lines : []).map(l => {
+    const line = {
+      id: uid(),
+      description: cleanStr(l.description),
+      quantity: parseNum(l.quantity),
+      unit_price: parseNum(l.unit_price),
+      line_total_excl_vat: parseNum(l.line_total_excl_vat),
+      unclear: (l.unclear_fields || []).filter(k => LINE_FIELDS.includes(k)),
+      confidence: clampConf(l.confidence),
+      edited: false,
+    };
+    return line;
+  });
+  return {
+    id: uid(), file: fileName, created: new Date().toISOString(),
+    fields: f, unclear: [...unclear], confidence: clampConf(raw.confidence),
+    notes: cleanStr(raw.notes) || '', edited: false, lines,
+  };
+}
+
+function invoiceChecks(inv) {
+  const list = []; const f = inv.fields;
+  const s = f.subtotal_excl_vat, v = f.vat_amount, t = f.total_paid;
+  let mathBad = false;
+  if ([s, v, t].every(isNum) && Math.abs(s + v - t) > 0.02) {
+    list.push(`Сума без ДДС + ДДС (${fmtMoney(s + v)}) не е равна на платената сума (${fmtMoney(t)})`);
+    mathBad = true;
+  }
+  const totals = inv.lines.map(l => l.line_total_excl_vat);
+  if (inv.lines.length && totals.every(isNum) && isNum(s)) {
+    const sum = totals.reduce((a, b) => a + b, 0);
+    if (Math.abs(sum - s) > 0.02 * Math.max(1, inv.lines.length)) {
+      list.push(`Сборът на редовете (${fmtMoney(sum)}) се различава от сумата без ДДС (${fmtMoney(s)})`);
+    }
+  }
+  if (f.invoice_number) {
+    const dup = invoices.some(o => o !== inv && o.fields.invoice_number === f.invoice_number &&
+      ((f.supplier_eik && o.fields.supplier_eik === f.supplier_eik) || (f.supplier_name && o.fields.supplier_name === f.supplier_name)));
+    if (dup) list.push('Възможен дубликат: фактура с този номер и доставчик вече е в таблицата');
+  }
+  if (!inv.lines.length) list.push('Не са открити редове със стоки или услуги');
+  return { list, mathBad };
+}
+
+// One row per line item. Invoice details repeat; invoice totals only on the first line.
+function buildRows() {
+  const rows = [];
+  invoices.forEach((inv, i) => {
+    const checks = invoiceChecks(inv);
+    const lines = inv.lines.length ? inv.lines : [null];
+    lines.forEach((l, j) => {
+      const cells = {};
+      for (const c of COLUMNS) {
+        if (c.level === 'inv') {
+          if (c.firstOnly && j > 0) { cells[c.key] = { skip:true }; continue; }
+          const value = inv.fields[c.key];
+          const bad = inv.unclear.includes(c.key) || (value == null && REQUIRED.has(c.key));
+          cells[c.key] = { value, bad, missing: value == null && !bad };
+        } else if (c.level === 'line') {
+          const value = l ? l[c.key] : null;
+          cells[c.key] = { value, bad: l ? (l.unclear.includes(c.key) || (value == null && REQUIRED.has(c.key))) : true };
+        } else if (c.key === 'file') {
+          cells.file = { value: inv.file };
+        } else if (c.key === 'confidence') {
+          let conf = Math.min(inv.confidence, l ? l.confidence : inv.confidence);
+          if (checks.mathBad) conf -= 20;
+          cells.confidence = { value: Math.max(0, conf) };
+        } else if (c.key === 'notes') {
+          const parts = [];
+          if (j === 0) {
+            if (inv.notes) parts.push(inv.notes);
+            parts.push(...checks.list);
+            if (inv.edited) parts.push('Данните за фактурата са коригирани ръчно');
+          }
+          if (l && l.edited) parts.push('Редът е коригиран ръчно');
+          cells.notes = { value: parts.join('. ').replace(/\.\./g, '.') || null };
+        }
+      }
+      rows.push({ inv, line: l, invIndex: i, lineIndex: j, cells });
+    });
+  });
+  return rows;
+}
+
+// ─────────────────────────────────────────────
+// Rendering the table
+// ─────────────────────────────────────────────
+const NUMERIC_TYPES = new Set(['qty','price','money','pct']);
+
+function renderTable(focusTarget) {
+  const rows = buildRows();
+  const has = rows.length > 0;
+  $('empty').hidden = has;
+  $('tableWrap').hidden = !has;
+  $('legend').hidden = !has;
+  $('exportBtn').disabled = !has;
+
+  const badCount = rows.reduce((n, r) => n + Object.values(r.cells).filter(c => c.bad).length, 0);
+  $('summary').innerHTML = has
+    ? `${invoices.length} ${pl(invoices.length,'фактура','фактури')}, ${rows.length} ${pl(rows.length,'ред','реда')}` +
+      (badCount ? `, <span class="flag">${badCount} ${pl(badCount,'клетка','клетки')} за проверка</span>` : ', няма неясни клетки')
+    : '';
+  if (!has) { $('tbody').innerHTML = ''; return; }
+
+  $('thead').innerHTML = '<tr>' + COLUMNS.map(c => `<th class="${NUMERIC_TYPES.has(c.type) ? 'num' : ''}">${esc(c.label)}</th>`).join('') + '<th aria-label="Действия"></th></tr>';
+
+  $('tbody').innerHTML = rows.map(r => {
+    const cls = [r.invIndex % 2 ? 'alt' : '', r.lineIndex === 0 ? 'inv-start' : ''].join(' ');
+    const tds = COLUMNS.map(c => cellHtml(c, r)).join('');
+    return `<tr class="${cls}">${tds}<td class="act"><button class="del" type="button" data-inv="${r.inv.id}" data-line="${r.line ? r.line.id : ''}" title="Изтрий реда" aria-label="Изтрий реда">✕</button></td></tr>`;
+  }).join('');
+
+  if (focusTarget) {
+    const sel = `td[data-inv="${focusTarget.inv}"][data-line="${focusTarget.line}"][data-key="${focusTarget.key}"]`;
+    const el = $('tbody').querySelector(sel);
+    if (el) el.focus();
+  }
+}
+
+function cellHtml(c, r) {
+  const cell = r.cells[c.key];
+  const numCls = NUMERIC_TYPES.has(c.type) ? 'num' : '';
+  if (cell.skip) return `<td class="${numCls}"></td>`;
+  if (c.key === 'confidence') return `<td class="num"><span class="conf ${confBand(cell.value)}">${cell.value}%</span></td>`;
+  if (c.key === 'notes') return `<td class="notes">${esc(cell.value || '')}</td>`;
+  if (c.key === 'file') return `<td class="file" title="${esc(cell.value)}">${esc(cell.value)}</td>`;
+
+  const display = cell.value == null ? (cell.bad ? UNCLEAR : cell.missing ? MISSING : '') : fmt(cell.value, c.type);
+  const classes = [numCls, cell.bad ? 'bad' : '', cell.missing ? 'missing' : '', c.key === 'description' ? 'desc' : ''].join(' ');
+  const editable = c.level === 'inv' || (c.level === 'line' && r.line);
+  if (!editable) return `<td class="${classes}">${esc(display)}</td>`;
+  return `<td class="${classes}" contenteditable="true" spellcheck="false" data-inv="${r.inv.id}" data-line="${c.level === 'line' ? r.line.id : ''}" data-key="${c.key}"${cell.bad ? ' title="Неясно: проверете и коригирайте"' : ''}>${esc(display)}</td>`;
+}
+
+// ─────────────────────────────────────────────
+// Editing cells
+// ─────────────────────────────────────────────
+const tbody = $('tbody');
+tbody.addEventListener('focusin', e => {
+  const td = e.target.closest('td[contenteditable]');
+  if (td) td.dataset.orig = td.textContent;
+});
+tbody.addEventListener('keydown', e => {
+  const td = e.target.closest('td[contenteditable]');
+  if (!td) return;
+  if (e.key === 'Enter') { e.preventDefault(); td.blur(); }
+  if (e.key === 'Escape') { td.textContent = td.dataset.orig || ''; td.blur(); }
+});
+tbody.addEventListener('paste', e => {
+  const td = e.target.closest('td[contenteditable]');
+  if (!td) return;
+  e.preventDefault();
+  const text = (e.clipboardData || window.clipboardData).getData('text').replace(/\s+/g, ' ');
+  document.execCommand('insertText', false, text);
+});
+tbody.addEventListener('focusout', e => {
+  const td = e.target.closest('td[contenteditable]');
+  if (!td) return;
+  const raw = td.textContent.trim();
+  if (raw === (td.dataset.orig || '').trim()) return;
+
+  const inv = invoices.find(x => x.id === td.dataset.inv);
+  if (!inv) return;
+  const key = td.dataset.key;
+  let val, stillUnclear = false;
+  if (raw === '' || raw.toUpperCase() === UNCLEAR || raw.toUpperCase() === MISSING) val = null;
+  else if (NUM_FIELDS.has(key)) { val = parseNum(raw); if (val == null) stillUnclear = true; }
+  else if (key === 'invoice_date') { val = normDate(raw) || raw; if (!normDate(raw)) stillUnclear = true; }
+  else val = raw;
+
+  if (td.dataset.line) {
+    const line = inv.lines.find(l => l.id === td.dataset.line);
+    if (!line) return;
+    line[key] = val;
+    line.unclear = line.unclear.filter(k => k !== key);
+    if (stillUnclear) line.unclear.push(key);
+    line.edited = true;
+  } else {
+    inv.fields[key] = val;
+    inv.unclear = inv.unclear.filter(k => k !== key);
+    if (stillUnclear) inv.unclear.push(key);
+    inv.edited = true;
+  }
+  saveData();
+
+  const next = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('td[contenteditable]');
+  renderTable(next ? { inv: next.dataset.inv, line: next.dataset.line, key: next.dataset.key } : null);
+});
+tbody.addEventListener('click', e => {
+  const btn = e.target.closest('.del');
+  if (!btn) return;
+  const inv = invoices.find(x => x.id === btn.dataset.inv);
+  if (!inv) return;
+  const lastLine = !btn.dataset.line || inv.lines.length <= 1;
+  if (lastLine) {
+    const label = inv.fields.invoice_number ? `№ ${inv.fields.invoice_number}` : `от файл „${inv.file}“`;
+    if (!confirm(`Това ще изтрие цялата фактура ${label}. Продължаване?`)) return;
+    invoices = invoices.filter(x => x !== inv);
+  } else {
+    inv.lines = inv.lines.filter(l => l.id !== btn.dataset.line);
+  }
+  saveData(); renderTable();
+});
+
+// ─────────────────────────────────────────────
+// File queue
+// ─────────────────────────────────────────────
+const IMG_TYPES = ['image/jpeg','image/png','image/webp','image/gif'];
+function kindOf(file) {
+  const n = file.name.toLowerCase();
+  if (file.type === 'application/pdf' || n.endsWith('.pdf')) return 'pdf';
+  if (IMG_TYPES.includes(file.type) || /\.(jpe?g|png|webp|gif)$/.test(n)) return 'image';
+  return null;
+}
+function addFiles(list) {
+  for (const file of list) {
+    const kind = kindOf(file);
+    const item = { id: uid(), file, status: 'pending', msg: '' };
+    if (!kind) {
+      item.status = 'error';
+      item.msg = /\.hei[cf]$/i.test(file.name)
+        ? 'Форматът HEIC не се поддържа. Запазете снимката като JPG.'
+        : 'Неподдържан формат. Използвайте JPG, PNG, WEBP или PDF.';
+    }
+    queue.push(item);
+  }
+  renderQueue();
+}
+function renderQueue() {
+  const ul = $('queueList');
+  if (!queue.length) {
+    ul.innerHTML = '<li class="q-empty">Няма избрани файлове.</li>';
+  } else {
+    ul.innerHTML = queue.map(q => {
+      const label = { pending:'Чака', working:'Чете се…', done:q.msg, error:q.msg }[q.status];
+      const action = q.status === 'pending' ? `<button class="del" type="button" data-q="${q.id}" data-act="remove" aria-label="Премахни">✕</button>`
+                   : q.status === 'error' && kindOf(q.file) ? `<button class="btn btn-quiet" type="button" data-q="${q.id}" data-act="retry">Опитай отново</button>` : '';
+      return `<li><span class="q-name" title="${esc(q.file.name)}">${esc(q.file.name)}</span><span class="q-status ${q.status}">${esc(label)}</span>${action}</li>`;
+    }).join('');
+  }
+  const pending = queue.filter(q => q.status === 'pending').length;
+  const btn = $('processBtn');
+  btn.disabled = running || !pending;
+  btn.textContent = running ? 'Обработва се…' : pending ? `Извлечи данните (${pending} ${pl(pending,'файл','файла')})` : 'Извлечи данните';
+}
+$('queueList').addEventListener('click', e => {
+  const b = e.target.closest('[data-q]');
+  if (!b || running) return;
+  const q = queue.find(x => x.id === b.dataset.q);
+  if (!q) return;
+  if (b.dataset.act === 'remove') queue = queue.filter(x => x !== q);
+  if (b.dataset.act === 'retry') { q.status = 'pending'; q.msg = ''; }
+  renderQueue();
+});
+$('clearQueue').addEventListener('click', () => {
+  if (running) return;
+  queue = queue.filter(q => q.status === 'pending' || q.status === 'working');
+  renderQueue();
+});
+
+const drop = $('drop');
+$('fileInput').addEventListener('change', e => { addFiles(e.target.files); e.target.value = ''; });
+['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => { if (e.dataTransfer && e.dataTransfer.files.length) addFiles(e.dataTransfer.files); });
+
+// ─────────────────────────────────────────────
+// Reading files and calling Claude
+// ─────────────────────────────────────────────
+function readAsBase64(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result).split(',')[1]);
+    r.onerror = () => rej(new Error('Файлът не може да бъде прочетен.'));
+    r.readAsDataURL(file);
+  });
+}
+async function imageToJpegBase64(file) {
+  let bmp;
+  try { bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+  catch { throw new Error('Снимката не може да бъде отворена.'); }
+  const MAX = 2000;
+  const scale = Math.min(1, MAX / Math.max(bmp.width, bmp.height));
+  const w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale);
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(bmp, 0, 0, w, h);
+  if (bmp.close) bmp.close();
+  return canvas.toDataURL('image/jpeg', 0.9).split(',')[1];
+}
+async function fileToBlock(file) {
+  if (kindOf(file) === 'pdf') {
+    if (file.size > 20 * 1024 * 1024) throw new Error('PDF файлът е по-голям от 20 MB. Разделете го на части.');
+    return { type:'document', source:{ type:'base64', media_type:'application/pdf', data: await readAsBase64(file) } };
+  }
+  return { type:'image', source:{ type:'base64', media_type:'image/jpeg', data: await imageToJpegBase64(file) } };
+}
+
+function apiError(status, msg) {
+  const low = (msg || '').toLowerCase();
+  let text, fatal = false;
+  if (status === 401) { text = 'API ключът е невалиден. Проверете го в Настройки.'; fatal = true; }
+  else if (low.includes('credit balance')) { text = 'Няма достатъчно кредит в акаунта в Anthropic. Добавете кредит в console.anthropic.com.'; fatal = true; }
+  else if (status === 403) { text = 'Ключът няма достъп до тази услуга.'; fatal = true; }
+  else if (status === 404) { text = 'Избраният модел не е наличен. Изберете друг в Настройки.'; fatal = true; }
+  else if (status === 413) { text = 'Файлът е твърде голям.'; }
+  else if (status === 429) { text = 'Твърде много заявки. Изчакайте минута и опитайте отново.'; }
+  else if (status >= 500) { text = 'Услугата на Anthropic е временно претоварена. Опитайте отново по-късно.'; }
+  else { text = 'Заявката е отхвърлена' + (msg ? ': ' + msg : '.'); }
+  const e = new Error(text); e.fatal = fatal; return e;
+}
+
+async function callClaude(block, fileName) {
+  const body = {
+    model: getModel(),
+    max_tokens: 8000,
+    system: SYSTEM_PROMPT,
+    tools: [TOOL],
+    tool_choice: { type:'tool', name:'record_invoices' },
+    messages: [{ role:'user', content: [block, { type:'text', text:`Файл: ${fileName}. Извлечи данните от всички фактури или касови бележки в него.` }] }],
+  };
+  const delays = [3000, 8000, 15000];
+  for (let attempt = 0; ; attempt++) {
+    let res;
+    try {
+      res = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': getKey(),
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      if (attempt < delays.length) { await sleep(delays[attempt]); continue; }
+      throw new Error('Няма връзка с Anthropic. Проверете интернет връзката.');
+    }
+    if (res.ok) {
+      const data = await res.json();
+      if (data.stop_reason === 'max_tokens') throw new Error('Отговорът е прекъснат, защото файлът е твърде дълъг. Разделете го на по-малки файлове.');
+      const tu = (data.content || []).find(b => b.type === 'tool_use');
+      if (!tu || !tu.input) throw new Error('Неочакван отговор. Опитайте отново.');
+      return tu.input;
+    }
+    let msg = '';
+    try { const j = await res.json(); msg = (j && j.error && j.error.message) || ''; } catch {}
+    if ([429, 500, 502, 503, 504, 529].includes(res.status) && attempt < delays.length) {
+      await sleep(delays[attempt]); continue;
+    }
+    throw apiError(res.status, msg);
+  }
+}
+
+async function processQueue() {
+  if (!getKey()) { openSettings(); return; }
+  running = true; renderQueue();
+  for (const q of queue) {
+    if (q.status !== 'pending') continue;
+    q.status = 'working'; renderQueue();
+    try {
+      const block = await fileToBlock(q.file);
+      const out = await callClaude(block, q.file.name);
+      const found = (Array.isArray(out.invoices) ? out.invoices : []).map(r => normInvoice(r, q.file.name));
+      if (!found.length) throw new Error(cleanStr(out.problem) || 'Не е открита фактура в този файл.');
+      invoices.push(...found);
+      saveData(); renderTable();
+      q.status = 'done';
+      q.msg = `Готово: ${found.length} ${pl(found.length,'фактура','фактури')}`;
+    } catch (err) {
+      q.status = 'error';
+      q.msg = err.message || String(err);
+      if (err.fatal) { renderQueue(); break; }
+    }
+    renderQueue();
+  }
+  running = false; renderQueue();
+}
+$('processBtn').addEventListener('click', processQueue);
+
+// ─────────────────────────────────────────────
+// Excel export
+// ─────────────────────────────────────────────
+const XL_FMT = { money:'#,##0.00', price:'#,##0.00##', qty:'General', pct:'0%', date:'dd.mm.yyyy' };
+const XL_BAD  = { fill:{ type:'pattern', pattern:'solid', fgColor:{ argb:'FFFFC7CE' } }, font:{ color:{ argb:'FF9C0006' }, bold:true } };
+const XL_MISSING = { font:{ color:{ argb:'FF6B7280' }, italic:true } };
+const XL_CONF = {
+  hi:  { fill:{ type:'pattern', pattern:'solid', fgColor:{ argb:'FFC6EFCE' } }, font:{ color:{ argb:'FF006100' } } },
+  mid: { fill:{ type:'pattern', pattern:'solid', fgColor:{ argb:'FFFFEB9C' } }, font:{ color:{ argb:'FF9C5700' } } },
+  lo:  { fill:{ type:'pattern', pattern:'solid', fgColor:{ argb:'FFFFC7CE' } }, font:{ color:{ argb:'FF9C0006' } } },
+};
+
+async function exportExcel() {
+  if (typeof ExcelJS === 'undefined') { alert('Библиотеката за Excel не се зареди. Проверете интернет връзката и презаредете страницата.'); return; }
+  const rows = buildRows();
+  if (!rows.length) return;
+  const wb = new ExcelJS.Workbook();
+  wb.created = new Date();
+  const ws = wb.addWorksheet('Фактури', { views:[{ state:'frozen', ySplit:1 }] });
+  ws.columns = COLUMNS.map(c => ({ header: c.label, key: c.key, width: c.w }));
+
+  const head = ws.getRow(1);
+  head.font = { bold: true };
+  head.alignment = { vertical: 'middle', wrapText: true };
+  head.height = 32;
+  head.eachCell(cell => { cell.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFE6ECFA' } }; });
+
+  for (const r of rows) {
+    const row = ws.addRow([]);
+    COLUMNS.forEach((c, idx) => {
+      const data = r.cells[c.key];
+      const cell = row.getCell(idx + 1);
+      if (data.skip) return;
+      let v = data.value;
+      if (c.key === 'confidence') {
+        cell.value = v / 100; cell.numFmt = XL_FMT.pct; Object.assign(cell, XL_CONF[confBand(v)]);
+        return;
+      }
+      if (v == null) {
+        if (data.bad) { cell.value = UNCLEAR; Object.assign(cell, XL_BAD); }
+        else if (data.missing) { cell.value = MISSING; Object.assign(cell, XL_MISSING); }
+        return;
+      }
+      if (c.type === 'date') {
+        const m = String(v).match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+        if (m) { cell.value = new Date(Date.UTC(+m[3], +m[2] - 1, +m[1])); cell.numFmt = XL_FMT.date; }
+        else cell.value = String(v);
+      } else if (XL_FMT[c.type] && isNum(v)) {
+        cell.value = v; cell.numFmt = XL_FMT[c.type];
+      } else {
+        cell.value = String(v);
+      }
+      if (data.bad) Object.assign(cell, XL_BAD);
+      if (c.key === 'description' || c.key === 'notes') cell.alignment = { wrapText: true, vertical: 'top' };
+      else cell.alignment = { vertical: 'top' };
+    });
+  }
+  ws.autoFilter = { from: { row:1, column:1 }, to: { row:1, column: COLUMNS.length } };
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `фактури-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+$('exportBtn').addEventListener('click', exportExcel);
+
+$('clearAll').addEventListener('click', () => {
+  if (!invoices.length) return;
+  if (!confirm('Да се изтрият ли всички данни от таблицата? Това не може да бъде отменено. Изтеглете Excel файла преди това, ако ви трябва.')) return;
+  invoices = []; saveData(); renderTable();
+});
+
+// ─────────────────────────────────────────────
+// Settings
+// ─────────────────────────────────────────────
+const dlg = $('settings');
+$('modelSelect').innerHTML = MODELS.map(([id, label]) => `<option value="${id}">${esc(label)}</option>`).join('');
+
+function openSettings() {
+  $('keyInput').value = getKey();
+  $('keyInput').type = 'password';
+  $('showKey').checked = false;
+  $('modelSelect').value = getModel();
+  $('keyHint').textContent = '';
+  if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+}
+function closeSettings() { if (dlg.close) dlg.close(); else dlg.removeAttribute('open'); }
+function renderKeyState() {
+  const has = !!getKey();
+  $('keyChip').textContent = has ? 'API ключ: добавен' : 'Няма API ключ';
+  $('keyChip').className = 'key-chip' + (has ? ' ok' : '');
+  $('keyNotice').hidden = has;
+}
+$('openSettings').addEventListener('click', openSettings);
+$('noticeSettings').addEventListener('click', openSettings);
+$('cancelSettings').addEventListener('click', closeSettings);
+$('showKey').addEventListener('change', e => { $('keyInput').type = e.target.checked ? 'text' : 'password'; });
+$('keyInput').addEventListener('input', e => {
+  const v = e.target.value.trim();
+  $('keyHint').textContent = v && !v.startsWith('sk-ant-') ? 'Ключовете на Anthropic обикновено започват със „sk-ant-“. Проверете дали е копиран целият.' : '';
+});
+$('saveSettings').addEventListener('click', () => {
+  const k = $('keyInput').value.trim();
+  if (k) lsSet(LS_KEY, k); else lsDel(LS_KEY);
+  lsSet(LS_MODEL, $('modelSelect').value);
+  renderKeyState(); closeSettings();
+});
+$('removeKey').addEventListener('click', () => {
+  if (!confirm('Да се премахне ли API ключът от този браузър?')) return;
+  lsDel(LS_KEY); renderKeyState(); closeSettings();
+});
+
+// ─────────────────────────────────────────────
+// Start
+// ─────────────────────────────────────────────
+loadData();
+renderKeyState();
+renderQueue();
+renderTable();
+if (invoices.length) $('saveState').textContent = 'Заредено от браузъра';
+</script>
+</body>
+</html>
