@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 :root {
   color-scheme: light;
@@ -120,6 +121,18 @@ button, input, select { font: inherit; color: inherit; }
 .q-status { font-size: 0.85rem; color: var(--muted); white-space: nowrap; }
 .q-status.working { color: var(--stamp); }
 .q-status.done { color: var(--ok); }
+.report { border-radius: 16px; padding: 18px 22px; margin-bottom: 28px; border: 1px solid transparent; }
+.report[hidden] { display: none; }
+.report-ok { background: var(--ok-bg); }
+.report-warn { background: var(--warn-bg); }
+.report-bad { background: var(--bad-bg); }
+.report-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.report h3 { font-size: 1.15rem; }
+.report p { margin-top: 6px; }
+.report .report-sub { font-weight: 600; margin-top: 12px; }
+.report .report-sub.bad { color: var(--bad); }
+.report ul { padding-left: 20px; margin-top: 4px; display: flex; flex-direction: column; gap: 3px; }
+.q-status.skipped { color: var(--muted); font-style: italic; }
 .q-status.error { color: var(--bad); white-space: normal; text-align: right; max-width: 55%; }
 .q-empty { color: var(--muted); font-size: 0.92rem; }
 .queue-foot { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
@@ -225,9 +238,9 @@ dialog::backdrop { background: rgba(10, 18, 32, 0.5); }
       </div>
       <div>
         <strong>Пуснете файловете тук или щракнете, за да ги изберете</strong>
-        <span>Снимки (JPG, PNG, WEBP) и PDF. Може няколко наведнъж.</span>
+        <span>Снимки (JPG, PNG, WEBP), PDF или ZIP архив с фактури. Може няколко наведнъж.</span>
       </div>
-      <input type="file" id="fileInput" multiple accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.pdf">
+      <input type="file" id="fileInput" multiple accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.pdf,.zip,application/zip,application/x-zip-compressed">
     </label>
 
     <div class="queue">
@@ -241,6 +254,8 @@ dialog::backdrop { background: rgba(10, 18, 32, 0.5); }
       </div>
     </div>
   </section>
+
+  <div class="report" id="runReport" role="status" aria-live="polite" hidden></div>
 
   <section>
     <div class="results-head">
@@ -367,11 +382,13 @@ Rules:
 - If amounts are shown in two currencies (e.g. BGN and EUR side by side), use the currency the line items are priced in for every amount, and mention the other currency's totals in notes.
 - Lines with negative values (e.g. Приспадане на авансово плащане, credit or return lines) are real lines: keep the minus sign on quantity and/or line total exactly as printed, and mention it in notes.
 - payment_method: as printed, in Bulgarian (e.g. "В брой", "Пощенски паричен превод (Еконт)", "Банков превод", "Карта"). null if not shown.
+- Handwritten documents (fully or partly): read slowly, character by character. Watch for common confusions in handwritten digits (1/7, 4/9, 5/6, 0/6, 3/8, comma vs dot) and handwritten Cyrillic (т written like m, д like g, и like u, п like n, е/с, ш/щ). Use the document's own logic to choose between readings: line total = quantity × unit price, line totals add up to the base, base + VAT = total, dates are valid, ЕИК has 9 or 13 digits. But only to choose between plausible readings of what is written, never to invent a value you cannot see. If you work a value out from the arithmetic instead of reading it, still give it, list the field as unclear and say so in confidence_reason. For handwritten documents keep confidence at 85 or below unless every character is unambiguous, and start notes with "Ръкописен документ".
 - Never guess. If a value is not on the document, set it to null. If a value is present but hard to read (blur, fold, stamp over it, handwriting, cut off), give your best reading and list the field name in the matching unclear_fields array.
 - confidence: 0 to 100, how sure you are that the extracted values are exactly right, for the invoice and for each line. Use 95 or above only for a clean, fully legible document whose totals add up.
 - confidence_reason (invoice and each line): short, plain Bulgarian for a non-technical bookkeeper. Say what stopped you being fully sure and exactly what to compare against the original, naming the field and line, e.g. "Цифрите в единичната цена на ред 2 са размазани – сравнете с оригинала." Empty string only when confidence is 95 or above.
 - notes: short, in Bulgarian, only when something needs the reader's attention (discount applied, prices converted from VAT-inclusive, page cut off, etc.). Otherwise an empty string.
-- If the file is not an invoice or receipt, return an empty invoices array and explain in "problem", in Bulgarian.`;
+- Count as invoices: фактура, касова бележка / фискален бон, кредитно известие and дебитно известие (for the last two, say which it is in notes). Not invoices: проформа фактура, оферта, стокова разписка, приемо-предавателен протокол, договор, банково извлечение, photos of other things, blank pages.
+- If the file contains no invoice, return an empty invoices array and in "problem" say briefly in Bulgarian what the document is instead (e.g. "Това е проформа фактура, а не данъчна фактура.").`;
 
 const NULLABLE_STR = { type:['string','null'] };
 const NULLABLE_NUM = { type:['number','null'] };
@@ -759,6 +776,9 @@ tbody.addEventListener('click', e => {
     if (!confirm(`Това ще изтрие цялата фактура ${label} заедно с всички редове. Продължаване?`)) return;
     invoices = invoices.filter(x => x !== inv);
   } else {
+    const line = inv.lines.find(l => l.id === btn.dataset.line);
+    const what = line && line.description ? `\n\n„${line.description}“` : '';
+    if (!confirm(`Искате ли да изтриете този ред?${what}`)) return;
     inv.lines = inv.lines.filter(l => l.id !== btn.dataset.line);
   }
   saveData(); renderTable();
@@ -768,22 +788,82 @@ tbody.addEventListener('click', e => {
 // File queue
 // ─────────────────────────────────────────────
 const IMG_TYPES = ['image/jpeg','image/png','image/webp','image/gif'];
+const EXT_TYPES = { jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', webp:'image/webp', gif:'image/gif', pdf:'application/pdf' };
 function kindOf(file) {
   const n = file.name.toLowerCase();
   if (file.type === 'application/pdf' || n.endsWith('.pdf')) return 'pdf';
   if (IMG_TYPES.includes(file.type) || /\.(jpe?g|png|webp|gif)$/.test(n)) return 'image';
+  if (/\.zip$/.test(n) || file.type === 'application/zip' || file.type === 'application/x-zip-compressed') return 'zip';
   return null;
 }
-function addFiles(list) {
-  for (const file of list) {
-    const kind = kindOf(file);
-    const item = { id: uid(), file, status: 'pending', msg: '' };
-    if (!kind) {
-      item.status = 'error';
-      item.msg = /\.hei[cf]$/i.test(file.name)
-        ? 'Форматът HEIC не се поддържа. Запазете снимката като JPG.'
-        : 'Неподдържан формат. Използвайте JPG, PNG, WEBP или PDF.';
+const qName = q => q.label || q.file.name;
+function unsupportedMsg(name) {
+  return /\.hei[cf]$/i.test(name)
+    ? 'Форматът HEIC не се поддържа. Запазете снимката като JPG.'
+    : /\.(rar|7z)$/i.test(name)
+      ? 'Поддържат се само ZIP архиви. Създайте архива като ZIP.'
+      : 'Неподдържан формат. Използвайте JPG, PNG, WEBP, PDF или ZIP.';
+}
+
+// ZIP files made on older Windows store Cyrillic names in the DOS code page (CP866)
+// rather than UTF-8. Try UTF-8 first, then fall back so names don't come out garbled.
+function decodeZipName(bytes) {
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
+  catch { return new TextDecoder('ibm866').decode(bytes); }
+}
+function isJunkEntry(path) {
+  const base = path.split('/').pop();
+  return path.startsWith('__MACOSX/') || path.includes('/__MACOSX/') || base.startsWith('.') ||
+         /^(thumbs\.db|desktop\.ini)$/i.test(base);
+}
+async function expandZip(zipFile, placeholder) {
+  if (typeof JSZip === 'undefined') throw new Error('Библиотеката за ZIP не се зареди. Проверете интернет връзката и презаредете страницата.');
+  let zip;
+  try { zip = await JSZip.loadAsync(await zipFile.arrayBuffer(), { decodeFileName: decodeZipName }); }
+  catch (err) {
+    const m = String(err && err.message || '').toLowerCase();
+    throw new Error(m.includes('encrypt') ? 'Архивът е защитен с парола. Разархивирайте го и качете файловете.' : 'Архивът не може да бъде отворен. Може да е повреден.');
+  }
+  const items = [];
+  const entries = Object.values(zip.files).filter(e => !e.dir && !isJunkEntry(e.name))
+    .sort((a, b) => a.name.localeCompare(b.name, 'bg', { numeric: true }));
+  for (const entry of entries) {
+    const base = entry.name.split('/').pop();
+    const label = `${zipFile.name} › ${entry.name}`;
+    const ext = (base.split('.').pop() || '').toLowerCase();
+    if (!EXT_TYPES[ext]) {
+      items.push({ id: uid(), file: new File([], base), label, status: 'skipped',
+        msg: ext === 'zip' ? 'Пропуснат: архив в архива. Качете го отделно.' : 'Пропуснат: неподдържан формат' });
+      continue;
     }
+    const blob = await entry.async('blob');
+    const file = new File([blob], base, { type: EXT_TYPES[ext] });
+    items.push({ id: uid(), file, label, status: 'pending', msg: '' });
+  }
+  if (!items.some(i => i.status === 'pending')) {
+    throw new Error('В архива няма снимки или PDF файлове с фактури.');
+  }
+  return items;
+}
+
+async function addFiles(list) {
+  const files = [...list];
+  for (const file of files) {
+    const kind = kindOf(file);
+    if (kind === 'zip') {
+      const placeholder = { id: uid(), file, label: file.name, status: 'working', msg: 'Разархивиране…' };
+      queue.push(placeholder); renderQueue();
+      try {
+        const items = await expandZip(file);
+        queue.splice(queue.indexOf(placeholder), 1, ...items);
+      } catch (err) {
+        placeholder.status = 'error'; placeholder.msg = err.message; placeholder.noRetry = true;
+      }
+      renderQueue();
+      continue;
+    }
+    const item = { id: uid(), file, status: 'pending', msg: '' };
+    if (!kind) { item.status = 'error'; item.msg = unsupportedMsg(file.name); item.noRetry = true; }
     queue.push(item);
   }
   renderQueue();
@@ -794,15 +874,17 @@ function renderQueue() {
     ul.innerHTML = '<li class="q-empty">Няма избрани файлове.</li>';
   } else {
     ul.innerHTML = queue.map(q => {
-      const label = { pending:'Чака', working:'Чете се…', done:q.msg, error:q.msg }[q.status];
+      const label = { pending:'Чака', working: q.msg || 'Чете се…', done:q.msg, error:q.msg, skipped:q.msg }[q.status];
       const action = q.status === 'pending' ? `<button class="del" type="button" data-q="${q.id}" data-act="remove" aria-label="Премахни">✕</button>`
-                   : q.status === 'error' && kindOf(q.file) ? `<button class="btn btn-quiet" type="button" data-q="${q.id}" data-act="retry">Опитай отново</button>` : '';
-      return `<li><span class="q-name" title="${esc(q.file.name)}">${esc(q.file.name)}</span><span class="q-status ${q.status}">${esc(label)}</span>${action}</li>`;
+                   : q.status === 'error' && !q.noRetry ? `<button class="btn btn-quiet" type="button" data-q="${q.id}" data-act="retry">Опитай отново</button>` : '';
+      const name = qName(q);
+      return `<li><span class="q-name" title="${esc(name)}">${esc(name)}</span><span class="q-status ${q.status}">${esc(label)}</span>${action}</li>`;
     }).join('');
   }
   const pending = queue.filter(q => q.status === 'pending').length;
+  const unpacking = queue.some(q => q.status === 'working' && !running);
   const btn = $('processBtn');
-  btn.disabled = running || !pending;
+  btn.disabled = running || unpacking || !pending;
   btn.textContent = running ? 'Обработва се…' : pending ? `Извлечи данните (${pending} ${pl(pending,'файл','файла')})` : 'Извлечи данните';
 }
 $('queueList').addEventListener('click', e => {
@@ -931,29 +1013,70 @@ async function callClaude(block, fileName) {
 
 async function processQueue() {
   if (!getKey()) { openSettings(); return; }
-  running = true; renderQueue();
-  for (const q of queue) {
-    if (q.status !== 'pending') continue;
-    q.status = 'working'; renderQueue();
+  running = true; hideReport(); renderQueue();
+  const batch = queue.filter(q => q.status === 'pending');
+  let stopReason = null;
+  for (const q of batch) {
+    if (stopReason) break;
+    q.status = 'working'; q.msg = ''; renderQueue();
     try {
       const block = await fileToBlock(q.file);
-      const out = await callClaude(block, q.file.name);
-      const found = (Array.isArray(out.invoices) ? out.invoices : []).map(r => normInvoice(r, q.file.name));
-      if (!found.length) throw new Error(cleanStr(out.problem) || 'Не е открита фактура в този файл.');
-      invoices.push(...found);
-      saveData(); renderTable();
-      q.status = 'done';
-      q.msg = `Готово: ${found.length} ${pl(found.length,'фактура','фактури')}`;
+      const out = await callClaude(block, qName(q));
+      const found = (Array.isArray(out.invoices) ? out.invoices : []).map(r => normInvoice(r, qName(q)));
+      if (!found.length) {
+        // Read fine, but it isn't an invoice: skip it rather than treat it as an error.
+        q.status = 'skipped'; q.notInvoice = true;
+        q.msg = 'Не е фактура: ' + (cleanStr(out.problem) || 'не е открита фактура или касова бележка');
+      } else {
+        invoices.push(...found);
+        saveData(); renderTable();
+        q.status = 'done'; q.found = found.length;
+        q.msg = `Готово: ${found.length} ${pl(found.length,'фактура','фактури')}`;
+      }
     } catch (err) {
       q.status = 'error';
       q.msg = err.message || String(err);
-      if (err.fatal) { renderQueue(); break; }
+      if (err.fatal) stopReason = q.msg;
     }
     renderQueue();
   }
   running = false; renderQueue();
+  showReport(batch, stopReason);
 }
 $('processBtn').addEventListener('click', processQueue);
+
+// ─────────────────────────────────────────────
+// End-of-run report
+// ─────────────────────────────────────────────
+function hideReport() { $('runReport').hidden = true; }
+function showReport(batch, stopReason) {
+  // Files skipped while unpacking ZIPs, or unsupported formats, that haven't been reported yet
+  const earlier = queue.filter(q => !batch.includes(q) && !q.reported && (q.status === 'skipped' || (q.status === 'error' && q.noRetry)));
+  const done = batch.filter(q => q.status === 'done');
+  const notInvoice = batch.filter(q => q.notInvoice);
+  const failed = batch.filter(q => q.status === 'error');
+  const untouched = batch.filter(q => q.status === 'pending');
+  const skipped = [...earlier, ...notInvoice];
+  [...batch, ...earlier].forEach(q => { q.reported = true; });
+
+  const invoiceCount = done.reduce((n, q) => n + (q.found || 0), 0);
+  const read = done.length + notInvoice.length + failed.length;
+  const list = items => '<ul>' + items.map(q => `<li><strong>${esc(qName(q))}</strong>: ${esc(q.msg.replace(/^Пропуснат: /, ''))}</li>`).join('') + '</ul>';
+
+  let html = `<div class="report-head"><h3>${stopReason ? 'Обработката е спряна' : 'Обработката приключи'}</h3>
+    <button class="btn btn-quiet" type="button" id="closeReport">Затвори</button></div>
+    <p>Прочетени файлове: <strong>${read}</strong>. Открити фактури: <strong>${invoiceCount}</strong>, добавени в таблицата.</p>`;
+  if (skipped.length) html += `<p class="report-sub">Пропуснати (${skipped.length}):</p>${list(skipped)}`;
+  if (failed.length) html += `<p class="report-sub bad">С грешка (${failed.length}):</p>${list(failed)}<p>Можете да ги опитате отново с бутона „Опитай отново“ в списъка с файлове.</p>`;
+  if (untouched.length) html += `<p class="report-sub bad">Не са обработени (${untouched.length}), защото: ${esc(stopReason)}</p><p>Оправете проблема и натиснете „Извлечи данните“ отново.</p>`;
+
+  const box = $('runReport');
+  box.className = 'report ' + (failed.length || untouched.length ? 'report-bad' : skipped.length ? 'report-warn' : 'report-ok');
+  box.innerHTML = html;
+  box.hidden = false;
+  $('closeReport').addEventListener('click', hideReport);
+  box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
 
 // ─────────────────────────────────────────────
 // Excel export
@@ -1010,6 +1133,9 @@ const INVOICE_SHEET_COLS = [
 
 async function exportExcel() {
   if (typeof ExcelJS === 'undefined') { alert('Библиотеката за Excel не се зареди. Проверете интернет връзката и презаредете страницата.'); return; }
+  // If a cell is still being edited, save it first so the change is in the file.
+  const editing = document.activeElement && document.activeElement.closest && document.activeElement.closest('td[contenteditable]');
+  if (editing) editing.blur();
   const rows = buildRows();
   if (!rows.length) return;
   const wb = new ExcelJS.Workbook();
